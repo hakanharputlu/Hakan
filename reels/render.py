@@ -1,6 +1,7 @@
 """Harputlu AVM - Öğretmenler Günü çanta kampanyası reels animasyonu.
 
 Kullanım:  python3 hazirla.py katmanlar && python3 render.py katmanlar cikti.mp4 - muzik_kaynak.mp4
+           python3 ses.py cikti.mp4 muzik_kaynak.mp4 son.mp4   (müzik + efekt sesleri)
 """
 import cv2, numpy as np, json, subprocess, sys, math
 
