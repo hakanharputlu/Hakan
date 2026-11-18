@@ -26,7 +26,7 @@ R = {
     'tiffany':  (406, 748, 888, 838),
 }
 R = {k: (int(a*sx), int(b*sy), int(c*sx), int(d*sy)) for k, (a, b, c, d) in R.items()}
-BAND = (int(125*sy), int(850*sy))  # yazıların bulunduğu dikey bant
+BAND = (int(125*sy), int(852*sy))  # yazıların bulunduğu dikey bant (çanta kulpunun üstünde biter)
 
 lum = 0.299 * O[..., 2] + 0.587 * O[..., 1] + 0.114 * O[..., 0]
 red = ((O[..., 2] - O[..., 1]) > 40) & (O[..., 2] > 110)
@@ -61,9 +61,20 @@ def push_pull(img, m):
         est = local * w + up * (1 - w)
     return est
 
-fill = cv2.GaussianBlur(push_pull(O, hole), (0, 0), 10)
+hmb = (((O[..., 2] - O[..., 1]) > 20) & (O[..., 2] > 70)).astype(np.uint8)
+hmb[:int(830*sy)] = 0
+hmb = cv2.dilate(hmb, np.ones((9, 9), np.uint8))
+fill = cv2.GaussianBlur(push_pull(O, hole | hmb), (0, 0), 10)  # kulp rengi dolguya karışmasın
 fill += np.random.default_rng(3).normal(0, 1.4, fill.shape).astype(np.float32)
 soft = cv2.GaussianBlur(cv2.dilate(hole, np.ones((9, 9), np.uint8)).astype(np.float32), (0, 0), 6)[..., None]
+# bandın alt kenarında yumuşakça sıfırla: altındaki çanta kulpu orijinal kalsın
+vr = np.clip((BAND[1] - np.arange(H, dtype=np.float32)) / 14, 0, 1)[:, None, None]
+soft = soft * vr
+# çanta kulpu (turuncu-kahve pikseller) asla doldurulmasın
+hm = (((O[..., 2] - O[..., 1]) > 20) & (O[..., 2] > 70)).astype(np.uint8)
+hm[:int(830*sy)] = 0
+hm = cv2.GaussianBlur(cv2.dilate(hm, np.ones((5, 5), np.uint8)).astype(np.float32), (0, 0), 1.5)
+soft = soft * (1 - np.clip(hm, 0, 1))[..., None]
 C = O * (1 - soft) + fill * soft
 C = np.clip(C, 0, 255)
 cv2.imwrite(f'{OUT}/arkaplan.png', C.astype(np.uint8))

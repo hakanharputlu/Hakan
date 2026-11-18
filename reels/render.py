@@ -1,12 +1,13 @@
 """Harputlu AVM - Öğretmenler Günü çanta kampanyası reels animasyonu.
 
-Kullanım:  python3 hazirla.py katmanlar && python3 render.py katmanlar cikti.mp4
+Kullanım:  python3 hazirla.py katmanlar && python3 render.py katmanlar cikti.mp4 - muzik_kaynak.mp4
 """
 import cv2, numpy as np, json, subprocess, sys, math
 
 KAT = sys.argv[1] if len(sys.argv) > 1 else 'katmanlar'
 OUT = sys.argv[2] if len(sys.argv) > 2 else 'harputlu_reels.mp4'
-PREVIEW = sys.argv[3] if len(sys.argv) > 3 else None  # "t1,t2,..." -> sadece kare kaydet
+PREVIEW = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != '-' else None  # "t1,t2,..." -> sadece kare kaydet
+MUZIK = sys.argv[4] if len(sys.argv) > 4 else None  # sesi alınacak video/ses dosyası
 W, H, FPS, DUR = 1080, 1920, 30, 12.0
 
 def ld(p, flag=cv2.IMREAD_UNCHANGED):
@@ -194,9 +195,9 @@ def frame(t):
         c = cv2.warpAffine(c, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
     # --- giriş: karanlıktan aydınlanma + spot ışık ---
-    fade = ease_out(prog(t, 0, 1.0))
+    fade = ease_out(prog(t, 0, .6))
     yy = np.linspace(0, 1, H, dtype=np.float32)[:, None, None]
-    spot = 1 - (1 - fade) * .0 - (1 - ease_out(prog(t, 0, 1.8))) * .55 * (1 - yy)
+    spot = 1 - (1 - fade) * .0 - (1 - ease_out(prog(t, 0, 1.4))) * .35 * (1 - yy)
     c *= fade * spot
     # hafif vinyet
     return np.clip(c * VIG, 0, 1)
@@ -213,6 +214,9 @@ if PREVIEW:
 
 ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'bgr24',
                        '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
+                       *(['-t', str(DUR), '-i', MUZIK, '-map', '0:v', '-map', '1:a',
+                          '-af', f'afade=t=in:d=0.3,afade=t=out:st={DUR-1.5}:d=1.5',
+                          '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-shortest'] if MUZIK else []),
                        '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p',
                        '-profile:v', 'high', '-movflags', '+faststart', OUT], stdin=subprocess.PIPE)
 N = int(DUR * FPS)
