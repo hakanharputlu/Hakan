@@ -166,7 +166,7 @@ def olaylar_yumusak():
     place(shimmer(1.8, .9, (2093, 2637, 3136), .08), 0.6, .35)                  # logo belirir
     place(swipe(.5) * .6, 4.2, .2, -.5, -.1)                                    # eski fiyatın üstü çizilir
     place(shimmer(2.2, 1.0, (2093, 2637, 3136, 4186), .07), 4.95, .5)           # 1.700 ₺ belirir
-    place(shimmer(1.8, .95, (2349, 2960, 3520), .12), 6.9, .3, -.3, .3)         # ürünlerde parlama
+    place(shimmer(1.8, .95, (2349, 2794, 3520), .12), 6.9, .3, -.3, .3)         # ürünlerde parlama (Dm akoruna uygun)
 
 
 {'sinematik': olaylar_sinematik, 'yumusak': olaylar_yumusak}.get(PROF.get('stil'), olaylar_klasik)()
