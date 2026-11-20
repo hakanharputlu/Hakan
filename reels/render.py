@@ -23,6 +23,8 @@ bg = ld('arkaplan.png').astype(np.float32) / 255
 meta = json.load(open(f'{KAT}/meta.json'))
 L = {}
 YILDIZ = meta.pop('_yildizlar', [])
+_src = cv2.imread(__import__('os').path.join(__import__('os').path.dirname(__import__('os').path.abspath(__file__)), PROF['kaynak'])).shape
+PROF['kutular_px'] = {k: (int(a * W / _src[1]), int(b * H / _src[0]), int(c_ * W / _src[1]), int(d * H / _src[0])) for k, (a, b, c_, d) in PROF['kutular'].items()}
 for k, box in meta.items():
     im = ld(f'{k}.png').astype(np.float32) / 255
     g = ld(f'{k}_parlak.png') if k != 'eski_cizgi' else None
@@ -258,9 +260,193 @@ yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
 VIG = (1 - .06 * (((xx - W / 2) / (W * .75)) ** 2 + ((yy - H / 2) / (H * .75)) ** 2))[..., None]
 VIG = np.clip(VIG, 0, 1)
 
+# =====================================================================
+# SİNEMATİK STİL: ürünle açılış -> yazılar ritimle -> fiyat çarpması
+# Müzik vuruşları (video zamanı): her 0.5 sn, vurgular 1.5 sn arayla
+# =====================================================================
+VURGU = [1.5, 3.0, 4.5, 6.0, 7.5, 9.0, 10.5]
+
+def cam_matrix(z, fx, fy, sx=0., sy=0.):
+    hw, hh = W / (2 * z), H / (2 * z)
+    fx = min(max(fx, hw), W - hw); fy = min(max(fy, hh), H - hh)
+    return np.float32([[z, 0, W / 2 - z * fx + sx], [0, z, H / 2 - z * fy + sy]])
+
+def shake(t, t0, amp, dur=.35):
+    if not (t0 <= t < t0 + dur): return 0., 0.
+    k = amp * math.exp(-(t - t0) * 12)
+    return k * math.sin((t - t0) * 95), k * math.cos((t - t0) * 77)
+
+def rise_mask(k, p):
+    """Yazı, kendi kutusunun alt çizgisinin arkasından yükselir. dy ve alpha çarpanı döndürür."""
+    x0, y0, x1, y1 = L[k]['box']
+    h = y1 - y0
+    dy = (1 - ease_out(p)) * h * .55
+    cut = (PROF['kutular_px'][k][3] + 6) - y0 - dy  # kutunun alt kenarı (katman koordinatı)
+    rows = np.clip(cut - np.arange(h, dtype=np.float32), 0, 1)[:, None]
+    return round(dy), rows
+
+def center_mask(k, p, edge=90.):
+    x0, y0, x1, y1 = L[k]['box']
+    w = x1 - x0
+    d = np.abs(np.arange(w, dtype=np.float32) - w / 2)
+    return np.clip((p * (w / 2 + edge) - d) / edge, 0, 1)[None, :]
+
+# yeni fiyat merkezi ve halka için mesafe alanı
+_yb = None
+def ring_field():
+    global _yb
+    if _yb is None:
+        x0, y0, x1, y1 = PROF['kutular_px']['yeni']
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        gy, gx = np.mgrid[0:H, 0:W].astype(np.float32)
+        _yb = (cx, cy, np.sqrt((gx - cx) ** 2 + ((gy - cy) * 1.15) ** 2))
+    return _yb
+
+brng = np.random.default_rng(21)
+NB = 44
+B_ANG = brng.uniform(0, 2 * np.pi, NB); B_V = brng.uniform(500, 1300, NB)
+B_R = brng.uniform(1.8, 4.5, NB); B_SPR = [sprite(r) for r in B_R]
+
+def burst(c, t, t0):
+    dt = t - t0
+    if not (0 <= dt < 1.1): return
+    cx, cy, _ = ring_field()
+    for i in range(NB):
+        dist = B_V[i] * (1 - math.exp(-dt * 3.2)) / 3.2
+        x = cx + math.cos(B_ANG[i]) * dist * 1.0; y = cy + math.sin(B_ANG[i]) * dist * .8
+        a = (1 - dt / 1.1) ** 1.5 * .9
+        sp = B_SPR[i]; s = sp.shape[0]; hs = s // 2
+        xi, yi = int(x) - hs, int(y) - hs
+        if xi < 0 or yi < 0 or xi + s > W or yi + s > H: continue
+        c[yi:yi + s, xi:xi + s] += (sp * a)[..., None] * GOLD
+
+def ring(c, t, t0, dur=.75):
+    p = prog(t, t0, t0 + dur)
+    if not (0 < p < 1): return
+    cx, cy, D = ring_field()
+    r = 40 + 760 * ease_out(p); th = 26 * (1 - p) + 5
+    y0 = int(max(cy - r * .9 - 60, 0)); y1 = int(min(cy + r * .9 + 60, H))
+    band = np.exp(-((D[y0:y1] - r) / th) ** 2) * .45 * (1 - p) ** 1.3
+    c[y0:y1] += band[..., None] * np.array([.55, .85, 1.0], np.float32)
+
+def stars_at(c, t, events):
+    for ts, i in events:
+        p = prog(t, ts, ts + .7)
+        if 0 < p < 1 and i < len(YILDIZ):
+            k = math.sin(math.pi * p) ** 1.5
+            M = cv2.getRotationMatrix2D((STAR.shape[1] / 2, STAR.shape[0] / 2), 25 * p, .45 + .75 * k)
+            sp = cv2.warpAffine(STAR, M, STAR.shape[::-1]) * k * 2.0
+            x, y = YILDIZ[i]; r = STAR.shape[0] // 2
+            x0, y0 = x - r, y - r
+            ax0, ay0 = max(x0, 0), max(y0, 0); ax1, ay1 = min(x0 + STAR.shape[1], W), min(y0 + STAR.shape[0], H)
+            c[ay0:ay1, ax0:ax1] += sp[ay0 - y0:ay1 - y0, ax0 - x0:ax1 - x0, None] * STAR_COL
+
+def gold_sweep(c, t, t0, t1, amt=.95):
+    p = prog(t, t0, t1)
+    if 0 < p < 1:
+        pos = -250 + ease_io(p) * (W + .6 * H + 500)
+        band = np.exp(-((AU - pos) / 110) ** 2) * ALTIN * amt
+        c[AY0:] += band[..., None] * np.array([.55, .88, 1.0], np.float32)
+
+STAR_EV1 = [(.35 + i * .26, i) for i in range(9)]
+STAR_EV2 = [(9.35 + ((i * 4) % 9) * .22, i) for i in range(9)]
+
+def frame_sinematik(t):
+    c = bg.copy()
+    ray_amt = .06 + .04 * math.sin(t * .9)
+    c += np.roll(RAYS, int(30 * math.sin(t * .35)), axis=1)[..., None] * ray_amt * np.array([.55, .85, .95], np.float32)
+
+    # ürün ışıltıları
+    if ALTIN is not None:
+        gold_sweep(c, t, .5, 1.9)
+        gold_sweep(c, t, 9.0, 10.2)
+        stars_at(c, t, STAR_EV1 + STAR_EV2)
+
+    # --- logo: vuruşla iner (3.0) ---
+    p = prog(t, 2.8, 3.0)
+    if p > 0:
+        e = p * p
+        sh = prog(t, 3.5, 4.2); sh2 = prog(t, 9.0, 9.7)
+        sp = sh if 0 < sh < 1 else (sh2 if 0 < sh2 < 1 else None)
+        put(c, 'logo', t_opacity=clamp(p * 2.5), scale=1.55 - .55 * e, blur=7 * (1 - p), shine_p=sp)
+
+    # --- tarih / çizgi / başlık: alttan yükselir ---
+    p = prog(t, 3.3, 3.85)
+    if p > 0:
+        dy, am = rise_mask('tarih', p); put(c, 'tarih', dy=dy, alpha_mul=am)
+    p = ease_io(prog(t, 3.45, 3.9))
+    if p > 0: put(c, 'cizgi', vgrow=p)
+    p = prog(t, 3.5, 4.1)
+    if p > 0:
+        dy, am = rise_mask('baslik', p); put(c, 'baslik', dy=dy, alpha_mul=am)
+
+    # --- ürün başlığı: ortadan açılır (4.5) ---
+    p = prog(t, 4.25, 4.75)
+    if p > 0:
+        e = ease_out(p)
+        sh = prog(t, 4.9, 5.6)
+        put(c, 'urun', scale=1.06 - .06 * e, alpha_mul=center_mask('urun', e),
+            shine_p=sh if 0 < sh < 1 else None)
+
+    # --- eski fiyat düşer, 6.0'da çizilir ---
+    p = prog(t, 5.15, 5.6)
+    if p > 0:
+        dim = 1 - .25 * prog(t, 6.3, 7.3) + .25 * prog(t, 7.5, 7.9)
+        put(c, 'eski', t_opacity=clamp(p * 3) * dim, dy=round(-60 * (1 - ease_back(p, 1.4))))
+    p = prog(t, 5.85, 6.05)
+    if p > 0:
+        put(c, 'eski_cizgi', wipe=ease_out(p))
+
+    # --- yeni fiyat: büyükten çarpar (7.5) ---
+    p = prog(t, 7.22, 7.5)
+    if p > 0:
+        if t < 7.5:
+            s = 2.3 - 1.3 * p * p; op = clamp(p * 2.2); bl = 9 * (1 - p)
+        else:
+            dt = t - 7.5
+            s = 1 - .06 * math.exp(-dt * 7) * math.cos(2 * math.pi * dt * 3.2); op = 1; bl = 0
+            # ritim nabzı: her vuruşta (0.5 sn) hafif büyüme
+            b = round(t * 2) / 2
+            s *= 1 + .022 * math.exp(-((t - b) / .07) ** 2) * prog(t, 8.0, 8.3)
+        glow = .9 * math.exp(-max(t - 7.5, 0) * 2.5) * prog(t, 7.35, 7.5) \
+             + .2 * (.5 + .5 * math.cos(2 * math.pi * t * 2)) * prog(t, 8.0, 8.5)
+        sh = [prog(t, 8.1, 8.8), prog(t, 10.4, 11.1)]
+        sp = next((x for x in sh if 0 < x < 1), None)
+        put(c, 'yeni', t_opacity=op, scale=s, blur=bl, glow=glow, shine_p=sp)
+    ring(c, t, 7.5)
+    burst(c, t, 7.5)
+
+    particles(c, t, .6 + .4 * prog(t, 7.5, 8.0))
+
+    # --- flaşlar ---
+    fl = .10 * math.exp(-max(t - 3.0, 0) * 18) * (t >= 3.0) + .2 * math.exp(-max(t - 7.5, 0) * 14) * (t >= 7.5)
+    if fl > .003: c += fl * np.array([.85, .95, 1.0], np.float32)
+
+    # --- kamera ---
+    if t < 1.5:
+        z = 1.36 - .04 * ease_io(t / 1.5); fx = 520 + 40 * t / 1.5; fy = 1500
+    elif t < 3.0:
+        e = ease_io(prog(t, 1.5, 2.95))
+        z = 1.32 + (1 - 1.32) * e; fx = 560 + (W / 2 - 560) * e; fy = 1500 + (H / 2 - 1500) * e
+    else:
+        z = 1.0; fx, fy = W / 2, H / 2
+        z += .02 * ease_io(prog(t, 6.2, 7.45)) * (t < 7.5)           # fiyat öncesi gerilim
+        for a in (9.0, 10.5):
+            z += .012 * math.exp(-((t - a) / .12) ** 2)               # vurgu nabzı
+    sx, sy = shake(t, 3.0, 4)
+    s2 = shake(t, 7.5, 9); sx += s2[0]; sy += s2[1]
+    if abs(z - 1) > 1e-4 or abs(sx) + abs(sy) > .05:
+        c = cv2.warpAffine(c, cam_matrix(z, fx, fy, sx, sy), (W, H), flags=cv2.INTER_LANCZOS4,
+                           borderMode=cv2.BORDER_REFLECT)
+
+    fade = ease_out(prog(t, 0, .5))
+    return np.clip(c * fade * VIG, 0, 1)
+
+FRAME = frame_sinematik if PROF.get('stil') == 'sinematik' else frame
+
 if PREVIEW:
     for ts in PREVIEW.split(','):
-        f = frame(float(ts))
+        f = FRAME(float(ts))
         cv2.imwrite(f'{OUT}_{ts}.png', (f * 255 + .5).astype(np.uint8))
     sys.exit()
 
@@ -273,7 +459,7 @@ ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '
                        '-profile:v', 'high', '-movflags', '+faststart', OUT], stdin=subprocess.PIPE)
 N = int(DUR * FPS)
 for i in range(N):
-    f = frame(i / FPS)
+    f = FRAME(i / FPS)
     ff.stdin.write((f * 255 + .5).astype(np.uint8).tobytes())
     if i % 60 == 0: print(f'{i}/{N}', flush=True)
 ff.stdin.close(); ff.wait()

@@ -109,40 +109,59 @@ def place(x, t0, gain=1., pan=0., pan_to=None):
     sfx[0, i:i + n] += x[:n] * np.cos(ang) * gain * 1.414
     sfx[1, i:i + n] += x[:n] * np.sin(ang) * gain * 1.414
 
-place(riser(.5), 0.0, .35)                                   # açılış
-place(whoosh(.8, 200, 3000, .6), 0.25, .4)                  # logo yaklaşır
-place(shimmer(1.8, 1.0), 0.95, .55)                          # logo belirir
-place(whoosh(.5, 300, 4000, .5), 1.25, .32, -.7, -.1)        # 24 KASIM soldan
-place(tick(), 1.75, .5)                                      # ayraç çizgisi
-place(whoosh(.55, 300, 4200, .5), 1.55, .32, .7, .1)         # başlık sağdan
-place(shimmer(1.2, .85, (2637, 3520, 4699)), 1.75, .25, -.3) # logo parıltısı
-place(whoosh(.9, 250, 5000, .7), 2.45, .5, -.6, .6)          # TÜM ÇANTALAR açılır
-place(shimmer(1.2, .9, (3136, 3951, 4699)), 2.7, .2, .3)     # başlık parıltısı
-place(pop(700, 260, .1, .5), 3.38, 1.6, -.4)                  # 1.900 ₺
-place(swipe(.4), 3.95, .55, -.7, .0)                         # üstü çizilir
-place(riser(.45), 4.0, .5)                                   # 1.500 öncesi gerilim
-place(impact(), 4.5, 1.0)                                    # 1.500 ₺ VURUŞ
-place(shimmer(2.2, 1.0, (2093, 2637, 3136, 4186, 5274, 6272)), 4.62, .5)
-place(shimmer(1.4, 1.12, (3136, 4186, 5274)), 5.25, .8, .4)  # fiyat parıltısı
-place(whoosh(.4, 400, 3500, .5), 5.1, .3, -.4)
-# marka etiketleri (varsa): aşağıdan gelirken pop + parıltı
-for i, _ in enumerate(PROF['markalar']):
-    side = -.5 if i % 2 == 0 else .5
-    place(pop(1000 + 250 * i, 380 + 70 * i, .08, .55), 5.45 + .2 * i, 1.6, side)
-    place(shimmer(1.0, 1.25 + .05 * i, (4186 + 513 * i, 5274 + 314 * i)), 6.55 + .2 * i, .6, side * .8)
-# ürünlerdeki altın parlama + yıldız ışıltıları
-if PROF['altin_isilti']:
-    for t0, t1 in ALTIN_SUPURME:
-        place(whoosh(t1 - t0, 1500, 7000, .5), t0, .22, -.6, .6)
-        place(shimmer(1.8, 1.05, (2349, 2960, 3520, 4435, 5274, 7040), .09), t0 + .1, .55, -.4)
-    for k, (ts, i) in enumerate(yildiz_zamanlari(PROF.get('yildiz_sayisi', 9))):
-        f = (4186, 4699, 5274, 5920, 6272)[i % 5]
-        place(shimmer(.9, 1.0, (f, f * 1.5)), ts + .2, .32, ((i * .37) % 1) * 1.4 - .7)
-place(shimmer(1.4, .95, (2637, 3520, 4699)), 7.05, .7, -.2) # logo parıltısı
-place(shimmer(1.4, 1.1, (3136, 4186, 5274)), 7.95, .75, .3)  # fiyat parıltısı
-place(shimmer(1.2, .9, (2637, 3136, 3951)), 8.65, .6, -.3)  # TÜM ÇANTALAR parıltısı
-place(shimmer(1.4, 1.1, (3136, 4186, 5274)), 10.05, .75, .3) # fiyat parıltısı
-place(shimmer(1.4, .95, (2637, 3520, 4699)), 10.65, .6, -.2) # logo parıltısı
+def olaylar_klasik():
+    place(riser(.5), 0.0, .35)                                   # açılış
+    place(whoosh(.8, 200, 3000, .6), 0.25, .4)                  # logo yaklaşır
+    place(shimmer(1.8, 1.0), 0.95, .55)                          # logo belirir
+    place(whoosh(.5, 300, 4000, .5), 1.25, .32, -.7, -.1)        # 24 KASIM soldan
+    place(tick(), 1.75, .5)                                      # ayraç çizgisi
+    place(whoosh(.55, 300, 4200, .5), 1.55, .32, .7, .1)         # başlık sağdan
+    place(shimmer(1.2, .85, (2637, 3520, 4699)), 1.75, .25, -.3) # logo parıltısı
+    place(whoosh(.9, 250, 5000, .7), 2.45, .5, -.6, .6)          # TÜM ÇANTALAR açılır
+    place(shimmer(1.2, .9, (3136, 3951, 4699)), 2.7, .2, .3)     # başlık parıltısı
+    place(pop(700, 260, .1, .5), 3.38, 1.6, -.4)                  # 1.900 ₺
+    place(swipe(.4), 3.95, .55, -.7, .0)                         # üstü çizilir
+    place(riser(.45), 4.0, .5)                                   # 1.500 öncesi gerilim
+    place(impact(), 4.5, 1.0)                                    # 1.500 ₺ VURUŞ
+    place(shimmer(2.2, 1.0, (2093, 2637, 3136, 4186, 5274, 6272)), 4.62, .5)
+    place(shimmer(1.4, 1.12, (3136, 4186, 5274)), 5.25, .8, .4)  # fiyat parıltısı
+    place(whoosh(.4, 400, 3500, .5), 5.1, .3, -.4)
+    # marka etiketleri (varsa): aşağıdan gelirken pop + parıltı
+    for i, _ in enumerate(PROF['markalar']):
+        side = -.5 if i % 2 == 0 else .5
+        place(pop(1000 + 250 * i, 380 + 70 * i, .08, .55), 5.45 + .2 * i, 1.6, side)
+        place(shimmer(1.0, 1.25 + .05 * i, (4186 + 513 * i, 5274 + 314 * i)), 6.55 + .2 * i, .6, side * .8)
+    # ürünlerdeki altın parlama + yıldız ışıltıları
+    if PROF['altin_isilti']:
+        for t0, t1 in ALTIN_SUPURME:
+            place(whoosh(t1 - t0, 1500, 7000, .5), t0, .22, -.6, .6)
+            place(shimmer(1.8, 1.05, (2349, 2960, 3520, 4435, 5274, 7040), .09), t0 + .1, .55, -.4)
+        for k, (ts, i) in enumerate(yildiz_zamanlari(PROF.get('yildiz_sayisi', 9))):
+            f = (4186, 4699, 5274, 5920, 6272)[i % 5]
+            place(shimmer(.9, 1.0, (f, f * 1.5)), ts + .2, .32, ((i * .37) % 1) * 1.4 - .7)
+    place(shimmer(1.4, .95, (2637, 3520, 4699)), 7.05, .7, -.2) # logo parıltısı
+    place(shimmer(1.4, 1.1, (3136, 4186, 5274)), 7.95, .75, .3)  # fiyat parıltısı
+    place(shimmer(1.2, .9, (2637, 3136, 3951)), 8.65, .6, -.3)  # TÜM ÇANTALAR parıltısı
+    place(shimmer(1.4, 1.1, (3136, 4186, 5274)), 10.05, .75, .3) # fiyat parıltısı
+    place(shimmer(1.4, .95, (2637, 3520, 4699)), 10.65, .6, -.2) # logo parıltısı
+
+
+def olaylar_sinematik():
+    """Az ve yumuşak efekt: müzik önde kalır. Zamanlar render.py frame_sinematik ile eşleşir."""
+    place(shimmer(1.6, .9, (2349, 2960, 3520, 4435), .1), 0.55, .6, -.3, .3)   # ürünlerde parlama
+    place(whoosh(.45, 200, 2500, .7), 2.6, .35)                                 # logo iner
+    place(impact(.9), 3.0, .3)                                                  # logo vuruşu (hafif)
+    place(whoosh(.5, 300, 3000, .5), 3.3, .18, -.3, .3)                         # yazılar yükselir
+    place(whoosh(.45, 400, 3500, .5), 4.25, .2)                                 # başlık açılır
+    place(pop(700, 260, .1, .5), 5.3, .8, -.4)                                  # eski fiyat düşer
+    place(swipe(.22), 5.85, .35, -.6, .0)                                       # üstü çizilir
+    place(riser(1.2), 6.3, .25)                                                 # fiyat öncesi gerilim
+    place(impact(), 7.5, .3)                                                    # 1.700 ₺ çarpar
+    place(shimmer(2.0, 1.0, (2093, 2637, 3136, 4186, 5274)), 7.55, .3)
+    place(shimmer(1.6, .95, (2349, 2960, 3520, 4435), .1), 9.05, .5, -.3, .3)  # ikinci parlama
+
+
+(olaylar_sinematik if PROF.get('stil') == 'sinematik' else olaylar_klasik)()
 sfx = sfx[:, :N]
 
 # ---------- müzik ----------
@@ -157,7 +176,8 @@ m *= 10 ** (-17.5 / 20) / max(_rms, 1e-6)
 t = np.arange(N) / SR
 env = np.clip(t / .3, 0, 1) * np.clip((DUR - t) / 1.5, 0, 1)
 # vuruş anında müziği hafifçe kıs (ducking)
-duck = 1 - .35 * np.exp(-((t - 4.75) / .45) ** 2)
+duck = (1 - .12 * np.exp(-((t - 7.7) / .4) ** 2)) if PROF.get('stil') == 'sinematik' \
+    else (1 - .35 * np.exp(-((t - 4.75) / .45) ** 2))
 m *= env * duck * .8
 
 SFX_GAIN = float(sys.argv[5]) if len(sys.argv) > 5 else .35
