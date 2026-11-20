@@ -52,7 +52,7 @@ def shine(rgb, glyph, p, width=34, strength=.75):
     return np.clip(rgb + band[..., None] * col, 0, 1)
 
 def put(canvas, k, t_opacity=1., dx=0., dy=0., scale=1., blur=0., wipe=None,
-        vgrow=None, shine_p=None, glow=0., alpha_mul=None):
+        vgrow=None, shine_p=None, glow=0., alpha_mul=None, shine_k=.75):
     """Katmanı dönüşümle tuvale yerleştirir."""
     if t_opacity <= 0: return
     ly = L[k]
@@ -60,7 +60,7 @@ def put(canvas, k, t_opacity=1., dx=0., dy=0., scale=1., blur=0., wipe=None,
     rgb, a = ly['rgb'], ly['a'].copy()
     h, w = a.shape
     if shine_p is not None and ly['glyph'] is not None:
-        rgb = shine(rgb, ly['glyph'], shine_p)
+        rgb = shine(rgb, ly['glyph'], shine_p, strength=shine_k)
     if wipe is not None:  # soldan sağa yumuşak açılma
         edge = 140.
         xs = np.arange(w, dtype=np.float32)
@@ -442,7 +442,71 @@ def frame_sinematik(t):
     fade = ease_out(prog(t, 0, .5))
     return np.clip(c * fade * VIG, 0, 1)
 
-FRAME = frame_sinematik if PROF.get('stil') == 'sinematik' else frame
+# =====================================================================
+# YUMUŞAK STİL: tüm sahneyle başlar, yazılar sırayla nazikçe belirir
+# (sarsıntı / flaş / patlama yok)
+# =====================================================================
+def soft_in(k, t, t0, dur=.8, rise=22, blur0=4., **kw):
+    p = prog(t, t0, t0 + dur)
+    if p <= 0: return
+    e = ease_out(p)
+    put(c_ref[0], k, t_opacity=e, dy=rise * (1 - e), blur=blur0 * (1 - e), **kw)
+
+c_ref = [None]
+STAR_SOFT = [(7.1, 0), (7.7, 3), (8.3, 1), (8.9, 5), (9.6, 2)]
+
+def frame_yumusak(t):
+    c = bg.copy(); c_ref[0] = c
+    c += np.roll(RAYS, int(25 * math.sin(t * .3)), axis=1)[..., None] * (.06 + .03 * math.sin(t * .7)) \
+         * np.array([.55, .85, .95], np.float32)
+
+    if ALTIN is not None:
+        gold_sweep(c, t, 6.8, 8.6, amt=.45)
+        for ts, i in STAR_SOFT:
+            p = prog(t, ts, ts + .9)
+            if 0 < p < 1 and i < len(YILDIZ):
+                k = math.sin(math.pi * p) ** 2
+                M = cv2.getRotationMatrix2D((STAR.shape[1] / 2, STAR.shape[0] / 2), 15 * p, .35 + .45 * k)
+                sp = cv2.warpAffine(STAR, M, STAR.shape[::-1]) * k * 1.0
+                x, y = YILDIZ[i]; r = STAR.shape[0] // 2
+                x0, y0 = x - r, y - r
+                ax0, ay0 = max(x0, 0), max(y0, 0); ax1, ay1 = min(x0 + STAR.shape[1], W), min(y0 + STAR.shape[0], H)
+                c[ay0:ay1, ax0:ax1] += sp[ay0 - y0:ay1 - y0, ax0 - x0:ax1 - x0, None] * STAR_COL
+
+    def sh(*wins):
+        for a, b in wins:
+            q = prog(t, a, b)
+            if 0 < q < 1: return q
+        return None
+
+    soft_in('logo', t, .5, 1.0, rise=18, blur0=6, shine_p=sh((7.6, 8.5)), shine_k=.45)
+    soft_in('tarih', t, 1.3, .9)
+    p = ease_io(prog(t, 1.5, 2.2))
+    if p > 0: put(c, 'cizgi', vgrow=p)
+    soft_in('baslik', t, 1.55, .9)
+    soft_in('urun', t, 2.5, .9, shine_p=sh((8.6, 9.5)), shine_k=.4)
+    soft_in('eski', t, 3.5, .7, rise=14)
+    p = prog(t, 4.2, 4.75)
+    if p > 0: put(c, 'eski_cizgi', wipe=ease_io(p))
+
+    p = prog(t, 4.85, 5.75)
+    if p > 0:
+        e = ease_back(p, 1.15)
+        breathe = 1 + .012 * math.sin(2 * math.pi * (t - 6.0) / 2.4) * prog(t, 6.0, 7.0)
+        glow = .35 * math.sin(math.pi * prog(t, 5.0, 6.4)) + .1 * prog(t, 6.4, 7.0) * (.5 + .5 * math.sin(2 * math.pi * (t - 6.4) / 2.4))
+        put(c, 'yeni', t_opacity=ease_out(clamp(p * 1.6)), scale=.86 + .14 * e, blur=3 * (1 - ease_out(p)),
+            glow=glow, shine_p=sh((6.3, 7.2), (10.0, 10.9)), shine_k=.5)
+
+    particles(c, t, .35 * prog(t, .3, 2.0))
+
+    z = 1.035 - .035 * ease_io(prog(t, 0, 6.0))
+    if z > 1.0003:
+        c = cv2.warpAffine(c, cam_matrix(z, W / 2, H * .5), (W, H), flags=cv2.INTER_LANCZOS4,
+                           borderMode=cv2.BORDER_REFLECT)
+    fade = ease_out(prog(t, 0, .8))
+    return np.clip(c * fade * VIG, 0, 1)
+
+FRAME = {'sinematik': frame_sinematik, 'yumusak': frame_yumusak}.get(PROF.get('stil'), frame)
 
 if PREVIEW:
     for ts in PREVIEW.split(','):

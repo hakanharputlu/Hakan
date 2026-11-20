@@ -36,7 +36,7 @@ PROFILLER = {
         koru_turuncu_y=None,
         markalar=[],
         altin_isilti=True,        # altın tepsi/fincanlarda parlama + yıldız ışıltıları
-        stil='sinematik',         # ürünle açılış, ritimli yazılar, fiyat çarpması
+        stil='yumusak',           # sakin, yumuşak animasyon (alternatif: 'sinematik')
     ),
 }
 

@@ -161,7 +161,15 @@ def olaylar_sinematik():
     place(shimmer(1.6, .95, (2349, 2960, 3520, 4435), .1), 9.05, .5, -.3, .3)  # ikinci parlama
 
 
-(olaylar_sinematik if PROF.get('stil') == 'sinematik' else olaylar_klasik)()
+def olaylar_yumusak():
+    """Çok az ve yumuşak: sadece birkaç hafif tını, müzik önde."""
+    place(shimmer(1.8, .9, (2093, 2637, 3136), .08), 0.6, .35)                  # logo belirir
+    place(swipe(.5) * .6, 4.2, .2, -.5, -.1)                                    # eski fiyatın üstü çizilir
+    place(shimmer(2.2, 1.0, (2093, 2637, 3136, 4186), .07), 4.95, .5)           # 1.700 ₺ belirir
+    place(shimmer(1.8, .95, (2349, 2960, 3520), .12), 6.9, .3, -.3, .3)         # ürünlerde parlama
+
+
+{'sinematik': olaylar_sinematik, 'yumusak': olaylar_yumusak}.get(PROF.get('stil'), olaylar_klasik)()
 sfx = sfx[:, :N]
 
 # ---------- müzik ----------
@@ -177,6 +185,7 @@ t = np.arange(N) / SR
 env = np.clip(t / .3, 0, 1) * np.clip((DUR - t) / 1.5, 0, 1)
 # vuruş anında müziği hafifçe kıs (ducking)
 duck = (1 - .12 * np.exp(-((t - 7.7) / .4) ** 2)) if PROF.get('stil') == 'sinematik' \
+    else np.ones_like(t) if PROF.get('stil') == 'yumusak' \
     else (1 - .35 * np.exp(-((t - 4.75) / .45) ** 2))
 m *= env * duck * .8
 
