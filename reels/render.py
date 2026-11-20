@@ -1,14 +1,19 @@
-"""Harputlu AVM - Öğretmenler Günü çanta kampanyası reels animasyonu.
+"""Harputlu AVM - Öğretmenler Günü kampanya reels animasyonu.
 
-Kullanım:  python3 hazirla.py katmanlar && python3 render.py katmanlar cikti.mp4 - muzik_kaynak.mp4
-           python3 ses.py cikti.mp4 muzik_kaynak.mp4 son.mp4   (müzik + efekt sesleri)
+Kullanım (profil: canta | fincan):
+  python3 hazirla.py <profil> katmanlar
+  python3 render.py <profil> katmanlar video.mp4            (sessiz video)
+  python3 ses.py <profil> video.mp4 muzik_kaynak.mp4 son.mp4   (müzik + efekt sesleri)
+Önizleme kareleri: python3 render.py <profil> katmanlar onek 1.0,4.5,...
 """
 import cv2, numpy as np, json, subprocess, sys, math
+from profiller import PROFILLER, ALTIN_SUPURME, yildiz_zamanlari
 
-KAT = sys.argv[1] if len(sys.argv) > 1 else 'katmanlar'
-OUT = sys.argv[2] if len(sys.argv) > 2 else 'harputlu_reels.mp4'
-PREVIEW = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] != '-' else None  # "t1,t2,..." -> sadece kare kaydet
-MUZIK = sys.argv[4] if len(sys.argv) > 4 else None  # sesi alınacak video/ses dosyası
+PROF = PROFILLER[sys.argv[1]]
+KAT = sys.argv[2] if len(sys.argv) > 2 else 'katmanlar'
+OUT = sys.argv[3] if len(sys.argv) > 3 else 'harputlu_reels.mp4'
+PREVIEW = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != '-' else None  # "t1,t2,..." -> sadece kare kaydet
+MUZIK = sys.argv[5] if len(sys.argv) > 5 else None  # sesi alınacak video/ses dosyası
 W, H, FPS, DUR = 1080, 1920, 30, 12.0
 
 def ld(p, flag=cv2.IMREAD_UNCHANGED):
@@ -17,6 +22,7 @@ def ld(p, flag=cv2.IMREAD_UNCHANGED):
 bg = ld('arkaplan.png').astype(np.float32) / 255
 meta = json.load(open(f'{KAT}/meta.json'))
 L = {}
+YILDIZ = meta.pop('_yildizlar', [])
 for k, box in meta.items():
     im = ld(f'{k}.png').astype(np.float32) / 255
     g = ld(f'{k}_parlak.png') if k != 'eski_cizgi' else None
@@ -134,6 +140,48 @@ def particles(canvas, t, amt):
         if xi < 0 or yi < 0 or xi + s > W or yi + s > H: continue
         canvas[yi:yi + s, xi:xi + s] += (sp * a)[..., None] * GOLD
 
+# ---------- altın parlama + yıldız ışıltıları (ürün bölgesi) ----------
+ALTIN = None
+if PROF['altin_isilti']:
+    ALTIN = ld('altin.png', cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255
+    AY0 = int(np.nonzero(ALTIN.max(axis=1) > 0)[0].min())
+    ALTIN = ALTIN[AY0:]
+    _yy, _xx = np.mgrid[AY0:H, 0:W].astype(np.float32)
+    AU = _xx + .6 * _yy
+    _ev = yildiz_zamanlari(len(YILDIZ))
+    YZ = [a for a, _ in _ev]; YI = [b for _, b in _ev]
+
+def star_sprite(r=64):
+    s = 2 * r + 1
+    yy, xx = np.mgrid[-r:r + 1, -r:r + 1].astype(np.float32)
+    d = np.sqrt(xx ** 2 + yy ** 2) + 1e-3
+    core = np.exp(-(d / 3.2) ** 2) + .45 * np.exp(-(d / 11) ** 2)
+    rays = np.exp(-np.abs(yy) / 1.1) * np.exp(-np.abs(xx) / (r * .42)) \
+         + np.exp(-np.abs(xx) / 1.1) * np.exp(-np.abs(yy) / (r * .42))
+    diag = (np.exp(-np.abs(xx - yy) / 1.0) + np.exp(-np.abs(xx + yy) / 1.0)) * np.exp(-d / (r * .16)) * .5
+    return np.clip(core + rays * .9 + diag, 0, 2)
+STAR = star_sprite()
+STAR_COL = np.array([.82, .95, 1.0], np.float32)
+
+def altin_isilti(c, t):
+    for t0, t1 in ALTIN_SUPURME:
+        p = prog(t, t0, t1)
+        if 0 < p < 1:
+            pos = -250 + ease_io(p) * (W + .6 * H + 500)
+            band = np.exp(-((AU - pos) / 110) ** 2) * ALTIN * .95
+            c[AY0:] += band[..., None] * np.array([.55, .88, 1.0], np.float32)
+    for ts, i in zip(YZ, YI):
+        p = prog(t, ts, ts + .7)
+        if 0 < p < 1:
+            k = math.sin(math.pi * p) ** 1.5
+            sc = .45 + .75 * k
+            M = cv2.getRotationMatrix2D((STAR.shape[1] / 2, STAR.shape[0] / 2), 25 * p, sc)
+            sp = cv2.warpAffine(STAR, M, STAR.shape[::-1]) * k * 2.0
+            x, y = YILDIZ[i]; r = STAR.shape[0] // 2
+            x0, y0 = x - r, y - r
+            ax0, ay0 = max(x0, 0), max(y0, 0); ax1, ay1 = min(x0 + STAR.shape[1], W), min(y0 + STAR.shape[0], H)
+            c[ay0:ay1, ax0:ax1] += sp[ay0 - y0:ay1 - y0, ax0 - x0:ax1 - x0, None] * STAR_COL
+
 # ---------- kare üretimi ----------
 def frame(t):
     c = bg.copy()
@@ -162,7 +210,7 @@ def frame(t):
     if p > 0:
         e = ease_out(p)
         sp = prog(t, 8.6, 9.4)
-        put(c, 'cantalar', wipe=ease_io(p), dy=round(24 * (1 - e)), shine_p=sp if 0 < sp < 1 else None)
+        put(c, 'urun', wipe=ease_io(p), dy=round(24 * (1 - e)), shine_p=sp if 0 < sp < 1 else None)
 
     p = ease_out(prog(t, 3.35, 3.85))
     if p > 0: put(c, 'eski', t_opacity=p, dy=round(18 * (1 - p)))
@@ -181,16 +229,19 @@ def frame(t):
         sp = next((x for x in sh if 0 < x < 1), None)
         put(c, 'yeni', t_opacity=clamp(p * 4), scale=s * breathe, glow=glow, shine_p=sp)
 
-    for k, t0, sd in (('armine', 5.15, 6.5), ('tiffany', 5.35, 6.7)):
+    for i, k in enumerate(PROF['markalar']):
+        t0, sd = 5.15 + .2 * i, 6.5 + .2 * i
         p = ease_out(prog(t, t0, t0 + .6))
         if p > 0:
             sp = prog(t, sd, sd + .7)
             put(c, k, t_opacity=p, dy=round(46 * (1 - p)), shine_p=sp if 0 < sp < 1 else None)
 
+    if ALTIN is not None:
+        altin_isilti(c, t)
     particles(c, t, prog(t, .3, 1.8))
 
     # --- kamera: yavaş içeri doğru yaklaşma (Ken Burns) ---
-    z = 1.075 - .075 * ease_io(prog(t, 0, 7.5))
+    z = 1.05 - .05 * ease_io(prog(t, 0, 7.5))
     if z > 1.0005:
         M = cv2.getRotationMatrix2D((W / 2, H * .52), 0, z)
         c = cv2.warpAffine(c, M, (W, H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
@@ -204,7 +255,7 @@ def frame(t):
     return np.clip(c * VIG, 0, 1)
 
 yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-VIG = (1 - .12 * (((xx - W / 2) / (W * .75)) ** 2 + ((yy - H / 2) / (H * .75)) ** 2))[..., None]
+VIG = (1 - .06 * (((xx - W / 2) / (W * .75)) ** 2 + ((yy - H / 2) / (H * .75)) ** 2))[..., None]
 VIG = np.clip(VIG, 0, 1)
 
 if PREVIEW:
@@ -218,7 +269,7 @@ ff = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '
                        *(['-t', str(DUR), '-i', MUZIK, '-map', '0:v', '-map', '1:a',
                           '-af', f'afade=t=in:d=0.3,afade=t=out:st={DUR-1.5}:d=1.5',
                           '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-shortest'] if MUZIK else []),
-                       '-c:v', 'libx264', '-preset', 'slow', '-crf', '16', '-pix_fmt', 'yuv420p',
+                       '-c:v', 'libx264', '-preset', 'slow', '-crf', '14', '-tune', 'film', '-pix_fmt', 'yuv420p',
                        '-profile:v', 'high', '-movflags', '+faststart', OUT], stdin=subprocess.PIPE)
 N = int(DUR * FPS)
 for i in range(N):

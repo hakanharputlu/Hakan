@@ -1,11 +1,13 @@
 """Reels için efekt seslerini üretir, müzikle karıştırır ve videoya ekler.
 
-Kullanım: python3 ses.py <video.mp4> <muzik_kaynak.mp4> <cikti.mp4>
+Kullanım: python3 ses.py <profil: canta|fincan> <video.mp4> <muzik_kaynak.mp4> <cikti.mp4> [efekt_kazanci]
 Efekt zamanları render.py'deki animasyon zamanlamasıyla eşleşir.
 """
 import numpy as np, subprocess, sys
+from profiller import PROFILLER, ALTIN_SUPURME, yildiz_zamanlari
 
-VIDEO, MUZIK, OUT = sys.argv[1:4]
+PROF = PROFILLER[sys.argv[1]]
+VIDEO, MUZIK, OUT = sys.argv[2:5]
 SR, DUR = 44100, 12.0
 N = int(SR * DUR)
 rng = np.random.default_rng(5)
@@ -122,10 +124,19 @@ place(impact(), 4.5, 1.0)                                    # 1.500 ₺ VURUŞ
 place(shimmer(2.2, 1.0, (2093, 2637, 3136, 4186, 5274, 6272)), 4.62, .5)
 place(shimmer(1.4, 1.12, (3136, 4186, 5274)), 5.25, .8, .4)  # fiyat parıltısı
 place(whoosh(.4, 400, 3500, .5), 5.1, .3, -.4)
-place(pop(1000, 380, .08, .55), 5.45, 1.6, -.5)               # Armine
-place(pop(1250, 450, .08, .55), 5.65, 1.6, .5)                # Tiffany Tomato
-place(shimmer(1.0, 1.25, (4186, 5274)), 6.55, .6, -.4)      # etiket parıltıları
-place(shimmer(1.0, 1.3, (4699, 5588)), 6.75, .6, .4)
+# marka etiketleri (varsa): aşağıdan gelirken pop + parıltı
+for i, _ in enumerate(PROF['markalar']):
+    side = -.5 if i % 2 == 0 else .5
+    place(pop(1000 + 250 * i, 380 + 70 * i, .08, .55), 5.45 + .2 * i, 1.6, side)
+    place(shimmer(1.0, 1.25 + .05 * i, (4186 + 513 * i, 5274 + 314 * i)), 6.55 + .2 * i, .6, side * .8)
+# ürünlerdeki altın parlama + yıldız ışıltıları
+if PROF['altin_isilti']:
+    for t0, t1 in ALTIN_SUPURME:
+        place(whoosh(t1 - t0, 1500, 7000, .5), t0, .22, -.6, .6)
+        place(shimmer(1.8, 1.05, (2349, 2960, 3520, 4435, 5274, 7040), .09), t0 + .1, .55, -.4)
+    for k, (ts, i) in enumerate(yildiz_zamanlari(PROF.get('yildiz_sayisi', 9))):
+        f = (4186, 4699, 5274, 5920, 6272)[i % 5]
+        place(shimmer(.9, 1.0, (f, f * 1.5)), ts + .2, .32, ((i * .37) % 1) * 1.4 - .7)
 place(shimmer(1.4, .95, (2637, 3520, 4699)), 7.05, .7, -.2) # logo parıltısı
 place(shimmer(1.4, 1.1, (3136, 4186, 5274)), 7.95, .75, .3)  # fiyat parıltısı
 place(shimmer(1.2, .9, (2637, 3136, 3951)), 8.65, .6, -.3)  # TÜM ÇANTALAR parıltısı
@@ -144,7 +155,7 @@ env = np.clip(t / .3, 0, 1) * np.clip((DUR - t) / 1.5, 0, 1)
 duck = 1 - .35 * np.exp(-((t - 4.75) / .45) ** 2)
 m *= env * duck * .8
 
-SFX_GAIN = float(sys.argv[4]) if len(sys.argv) > 4 else .35
+SFX_GAIN = float(sys.argv[5]) if len(sys.argv) > 5 else .35
 sfx *= SFX_GAIN
 mix = m + sfx * np.clip((DUR - t) / .8, 0, 1)
 peak = np.abs(mix).max()

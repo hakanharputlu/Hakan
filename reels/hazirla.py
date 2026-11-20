@@ -1,32 +1,22 @@
 """Kaynak görseli katmanlara ayırır: temiz arka plan + her yazı öğesi ayrı RGBA katman.
 
-Kullanım: python3 hazirla.py <cikti_klasoru>
+Kullanım: python3 hazirla.py <profil: canta|fincan> <cikti_klasoru>
 """
 import cv2, numpy as np, os, json, sys
+from profiller import PROFILLER
 
-OUT = sys.argv[1] if len(sys.argv) > 1 else 'katmanlar'
+PR = PROFILLER[sys.argv[1]]
+OUT = sys.argv[2] if len(sys.argv) > 2 else 'katmanlar'
 os.makedirs(OUT, exist_ok=True)
-src = cv2.imread(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'kaynak.png'))
+src = cv2.imread(os.path.join(os.path.dirname(os.path.abspath(__file__)), PR['kaynak']))
 H0, W0 = src.shape[:2]
 W, H = 1080, 1920
 sx, sy = W / W0, H / H0
 im = cv2.resize(src, (W, H), interpolation=cv2.INTER_LANCZOS4)
 O = im.astype(np.float32)
 
-# öğe kutuları (kaynak görsel koordinatı: x0,y0,x1,y1) - sıkı, birbirine taşmayan
-R = {
-    'logo':     (108, 138, 842, 258),
-    'tarih':    (92, 282, 306, 468),
-    'cizgi':    (318, 290, 338, 462),
-    'baslik':   (346, 282, 864, 466),
-    'cantalar': (98, 492, 864, 586),
-    'eski':     (42, 606, 320, 698),
-    'yeni':     (326, 588, 892, 740),
-    'armine':   (58, 748, 364, 838),
-    'tiffany':  (406, 748, 888, 838),
-}
-R = {k: (int(a*sx), int(b*sy), int(c*sx), int(d*sy)) for k, (a, b, c, d) in R.items()}
-BAND = (int(125*sy), int(852*sy))  # yazıların bulunduğu dikey bant (çanta kulpunun üstünde biter)
+R = {k: (int(a*sx), int(b*sy), int(c*sx), int(d*sy)) for k, (a, b, c, d) in PR['kutular'].items()}
+BAND = (int(PR['bant'][0]*sy), int(PR['bant'][1]*sy))  # yazıların bulunduğu dikey bant
 
 lum = 0.299 * O[..., 2] + 0.587 * O[..., 1] + 0.114 * O[..., 0]
 red = ((O[..., 2] - O[..., 1]) > 40) & (O[..., 2] > 110)
@@ -44,6 +34,8 @@ for k, (x0, y0, x1, y1) in R.items():
 G = np.zeros((H, W), np.uint8)
 for g in glyph.values(): G |= g
 hole = cv2.dilate(G, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (41, 41)))
+# büyük fiyatın etrafındaki altın hale de dolguya karışmasın (hale fiyatla birlikte gelir)
+hole |= cv2.dilate(glyph['yeni'], cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (91, 91)))
 hole[:BAND[0]] = 0; hole[BAND[1]:] = 0
 
 def push_pull(img, m):
@@ -61,10 +53,12 @@ def push_pull(img, m):
         est = local * w + up * (1 - w)
     return est
 
+KY = PR['koru_turuncu_y']
 hmb = (((O[..., 2] - O[..., 1]) > 20) & (O[..., 2] > 70)).astype(np.uint8)
-hmb[:int(830*sy)] = 0
+hmb[:int((KY or 1e9)*sy)] = 0
 hmb = cv2.dilate(hmb, np.ones((9, 9), np.uint8))
-fill = cv2.GaussianBlur(push_pull(O, hole | hmb), (0, 0), 10)  # kulp rengi dolguya karışmasın
+alt = np.zeros_like(hole); alt[BAND[1]:] = 1  # ürün bölgesi (fincan/çanta) dolguya renk vermesin
+fill = cv2.GaussianBlur(push_pull(O, hole | hmb | alt), (0, 0), 10)  # kulp rengi dolguya karışmasın
 fill += np.random.default_rng(3).normal(0, 1.4, fill.shape).astype(np.float32)
 soft = cv2.GaussianBlur(cv2.dilate(hole, np.ones((9, 9), np.uint8)).astype(np.float32), (0, 0), 6)[..., None]
 # bandın alt kenarında yumuşakça sıfırla: altındaki çanta kulpu orijinal kalsın
@@ -72,7 +66,7 @@ vr = np.clip((BAND[1] - np.arange(H, dtype=np.float32)) / 14, 0, 1)[:, None, Non
 soft = soft * vr
 # çanta kulpu (turuncu-kahve pikseller) asla doldurulmasın
 hm = (((O[..., 2] - O[..., 1]) > 20) & (O[..., 2] > 70)).astype(np.uint8)
-hm[:int(830*sy)] = 0
+hm[:int((KY or 1e9)*sy)] = 0
 hm = cv2.GaussianBlur(cv2.dilate(hm, np.ones((5, 5), np.uint8)).astype(np.float32), (0, 0), 1.5)
 soft = soft * (1 - np.clip(hm, 0, 1))[..., None]
 C = O * (1 - soft) + fill * soft
@@ -128,6 +122,24 @@ for i, k in enumerate(keys):
         save('eski_cizgi', k, O, ra, None)
         continue
     save(k, k, F, A * Wk[i], glyph[k])
+
+# ---- ürün bölgesindeki altın parlak yüzeyler (parlama süpürmesi + yıldız ışıltıları) ----
+if PR['altin_isilti']:
+    hsv = cv2.cvtColor(im, cv2.COLOR_BGR2HSV).astype(np.float32)
+    hue, sat, val = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    gold = np.clip((sat - 115) / 50, 0, 1) * np.clip((val - 150) / 60, 0, 1) * ((hue > 12) & (hue < 34))
+    gold[:BAND[1] + 10] = 0
+    gold = cv2.GaussianBlur(gold.astype(np.float32), (0, 0), 1.2)
+    cv2.imwrite(f'{OUT}/altin.png', (gold * 255).astype(np.uint8))
+    # yıldız noktaları: en parlak altın vurguları, birbirinden uzak
+    score = cv2.GaussianBlur((val / 255) ** 4 * (gold > .5), (0, 0), 2)
+    stars = []
+    for _ in range(9):
+        y, x = np.unravel_index(np.argmax(score), score.shape)
+        if score[y, x] <= 0: break
+        stars.append([int(x), int(y)])
+        cv2.circle(score, (int(x), int(y)), 170, 0, -1)
+    meta['_yildizlar'] = stars
 
 json.dump(meta, open(f'{OUT}/meta.json', 'w'), indent=1)
 print('ok')
