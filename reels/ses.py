@@ -1,6 +1,7 @@
 """Reels için efekt seslerini üretir, müzikle karıştırır ve videoya ekler.
 
-Kullanım: python3 ses.py <profil: canta|fincan> <video.mp4> <muzik_kaynak.mp4> <cikti.mp4> [efekt_kazanci]
+Kullanım: python3 ses.py <profil: canta|fincan> <video.mp4> <muzik> <cikti.mp4> [efekt_kazanci] [muzik_baslangic_sn]
+(Müzik ffmpeg'in açabildiği herhangi bir dosya olabilir; seviyesi otomatik dengelenir.)
 Efekt zamanları render.py'deki animasyon zamanlamasıyla eşleşir.
 """
 import numpy as np, subprocess, sys
@@ -145,10 +146,14 @@ place(shimmer(1.4, .95, (2637, 3520, 4699)), 10.65, .6, -.2) # logo parıltısı
 sfx = sfx[:, :N]
 
 # ---------- müzik ----------
-raw = subprocess.run(['ffmpeg', '-v', 'error', '-t', str(DUR), '-i', MUZIK, '-vn', '-ac', '2',
+BASLA = float(sys.argv[6]) if len(sys.argv) > 6 else 0.
+raw = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(BASLA), '-t', str(DUR), '-i', MUZIK, '-vn', '-ac', '2',
                       '-ar', str(SR), '-f', 'f32le', '-'], capture_output=True, check=True).stdout
 mus = np.frombuffer(raw, np.float32).reshape(-1, 2).T.astype(np.float64)
 m = np.zeros((2, N)); m[:, :min(N, mus.shape[1])] = mus[:, :N]
+# müzik seviyesini dengele: ortalama RMS -17.5 dBFS (efekt dengesi buna göre ayarlı)
+_rms = np.sqrt((m ** 2).mean())
+m *= 10 ** (-17.5 / 20) / max(_rms, 1e-6)
 t = np.arange(N) / SR
 env = np.clip(t / .3, 0, 1) * np.clip((DUR - t) / 1.5, 0, 1)
 # vuruş anında müziği hafifçe kıs (ducking)
